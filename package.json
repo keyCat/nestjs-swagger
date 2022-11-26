@@ -1,5 +1,5 @@
 {
-  "name": "@nestjs/swagger",
+  "name": "@0x0c/nestjs-swagger",
   "version": "6.1.3",
   "description": "Nest - modern, fast, powerful node.js web framework (@swagger)",
   "author": "Kamil Mysliwiec",
