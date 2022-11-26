@@ -8,6 +8,7 @@ export * from './api-exclude-controller.decorator';
 export * from './api-extra-models.decorator';
 export * from './api-header.decorator';
 export * from './api-hide-property.decorator';
+export * from './api-model.decorator';
 export * from './api-oauth2.decorator';
 export * from './api-operation.decorator';
 export * from './api-param.decorator';

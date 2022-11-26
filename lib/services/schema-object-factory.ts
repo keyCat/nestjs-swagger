@@ -203,8 +203,10 @@ export class SchemaObjectFactory {
     if (typeDefinitionRequiredFields.length > 0) {
       typeDefinition['required'] = typeDefinitionRequiredFields;
     }
-    schemas[type.name] = typeDefinition;
-    return type.name;
+    const metadata = Reflect.getMetadata(DECORATORS.API_MODEL, type)?.[0];
+    const typeName = metadata?.name ?? type.name;
+    schemas[typeName] = typeDefinition;
+    return typeName;
   }
 
   mergePropertyWithMetadata(
