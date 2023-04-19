@@ -1,4 +1,5 @@
 import {
+  All,
   Body,
   Controller,
   Get,
@@ -33,6 +34,7 @@ import { ModelPropertiesAccessor } from '../../lib/services/model-properties-acc
 import { SchemaObjectFactory } from '../../lib/services/schema-object-factory';
 import { SwaggerTypesMapper } from '../../lib/services/swagger-types-mapper';
 import { SwaggerExplorer } from '../../lib/swagger-explorer';
+import { GlobalParametersStorage } from '../../lib/storages/global-parameters.storage';
 
 describe('SwaggerExplorer', () => {
   const schemaObjectFactory = new SchemaObjectFactory(
@@ -860,9 +862,9 @@ describe('SwaggerExplorer', () => {
     }
 
     enum QueryEnum {
-      D = 'd',
-      E = 'e',
-      F = 'f'
+      D = 1,
+      E,
+      F = (() => 3)()
     }
 
     class Foo {}
@@ -915,6 +917,19 @@ describe('SwaggerExplorer', () => {
       }
     }
 
+    @Controller('')
+    class Bar2Controller {
+      @Get('bars/:objectId')
+      @ApiParam({
+        name: 'objectId',
+        enum: [1, 2, 3],
+        enumName: 'NumberEnum'
+      })
+      findBar(): Promise<Foo> {
+        return Promise.resolve(null);
+      }
+    }
+
     it('should properly define enums', () => {
       const explorer = new SwaggerExplorer(schemaObjectFactory);
       const config = new ApplicationConfig();
@@ -952,8 +967,8 @@ describe('SwaggerExplorer', () => {
           name: 'order',
           required: true,
           schema: {
-            type: 'string',
-            enum: ['d', 'e', 'f']
+            type: 'number',
+            enum: [1, 2, 3]
           }
         },
         {
@@ -994,8 +1009,8 @@ describe('SwaggerExplorer', () => {
           name: 'order',
           required: true,
           schema: {
-            type: 'string',
-            enum: ['d', 'e', 'f']
+            type: 'number',
+            enum: [1, 2, 3]
           }
         },
         {
@@ -1048,6 +1063,33 @@ describe('SwaggerExplorer', () => {
           required: true,
           schema: {
             $ref: '#/components/schemas/ParamEnum'
+          }
+        }
+      ]);
+    });
+
+    it('should properly define number enum as schema', () => {
+      const explorer = new SwaggerExplorer(schemaObjectFactory);
+
+      const schema = explorer.getSchemas();
+      const routes = explorer.exploreController(
+        {
+          instance: new Bar2Controller(),
+          metatype: Bar2Controller
+        } as InstanceWrapper<Bar2Controller>,
+        new ApplicationConfig(),
+        'modulePath',
+        'globalPrefix'
+      );
+
+      expect(schema.NumberEnum).toEqual({ type: 'number', enum: [1, 2, 3] });
+      expect(routes[0].root.parameters).toEqual([
+        {
+          in: 'path',
+          name: 'objectId',
+          required: true,
+          schema: {
+            $ref: '#/components/schemas/NumberEnum'
           }
         }
       ]);
@@ -1422,6 +1464,88 @@ describe('SwaggerExplorer', () => {
         expect(postRoutes[0].root.requestBody).toBeDefined();
         expect(postRoutes[1].root.requestBody).toBeDefined();
       });
+    });
+  });
+  
+  describe('when @All(...) is used', () => {
+
+    @Controller('')
+    class AllController {
+
+      @All('*')
+      all(): Promise<void> {
+        return Promise.resolve();
+      }
+    }
+
+    it('should create route for every method', () => {
+      const explorer = new SwaggerExplorer(schemaObjectFactory);
+      const routes = explorer.exploreController(
+        {
+          instance: new AllController(),
+          metatype: AllController
+        } as InstanceWrapper<AllController>,
+        new ApplicationConfig(),
+        'modulePath',
+        'globalPrefix'
+      );
+
+      expect(routes.length).toEqual(7);
+      expect(['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].every((method) => routes.find((route) => route.root.method === method))).toBe(true);
+      expect(routes.find((route) => route.root.method === 'all')).toBe(undefined);
+      // check if all routes are equal except for method
+      expect(routes.filter((v, i, a) => a.findIndex(v2 => ['path', 'parameter'].every(k => v2[k] === v[k])) === i).length).toEqual(1);
+    });
+  });
+  
+  describe('when global paramters are defined', () => {
+    class Foo {}
+
+    @Controller('')
+    class FooController {
+      @Get('foos')
+      find(): Promise<Foo[]> {
+        return Promise.resolve([]);
+      }
+    }
+
+    it('should properly define global paramters', () => {
+      GlobalParametersStorage.add(
+        {
+          name: 'x-tenant-id',
+          in: 'header',
+          schema: { type: 'string' }
+        },
+        {
+          name: 'x-tenant-id-2',
+          in: 'header',
+          schema: { type: 'string' }
+        }
+      );
+      const explorer = new SwaggerExplorer(schemaObjectFactory);
+      const routes = explorer.exploreController(
+        {
+          instance: new FooController(),
+          metatype: FooController
+        } as InstanceWrapper<FooController>,
+        new ApplicationConfig(),
+        'modulePath',
+        'globalPrefix'
+      );
+
+      expect(routes[0].root.parameters).toEqual([
+        {
+          name: 'x-tenant-id',
+          in: 'header',
+          schema: { type: 'string' }
+        },
+        {
+          name: 'x-tenant-id-2',
+          in: 'header',
+          schema: { type: 'string' }
+        }
+      ]);
+      GlobalParametersStorage.clear();
     });
   });
 });

@@ -64,7 +64,7 @@ export class ControllerClassVisitor extends AbstractFileVisitor {
     // Support both >= v4.8 and v4.7 and lower
     const decorators = (ts as any).canHaveDecorators
       ? (ts as any).getDecorators(compilerNode)
-      : compilerNode.decorators;
+      : (compilerNode as any).decorators;
     if (!decorators) {
       return compilerNode;
     }
@@ -124,7 +124,7 @@ export class ControllerClassVisitor extends AbstractFileVisitor {
           compilerNode.type,
           compilerNode.body
         )
-      : factory.updateMethodDeclaration(
+      : (factory as any).updateMethodDeclaration(
           compilerNode,
           updatedDecorators,
           modifiers,
@@ -163,6 +163,9 @@ export class ControllerClassVisitor extends AbstractFileVisitor {
       (apiOperationExpr.properties as ts.NodeArray<ts.PropertyAssignment>);
 
     const extractedComments = getMainCommentOfNode(node, sourceFile);
+    if (!extractedComments) {
+      return [];
+    }
     const tags = getTsDocTagsOfNode(node, sourceFile, typeChecker);
 
     const properties = [
@@ -279,7 +282,7 @@ export class ControllerClassVisitor extends AbstractFileVisitor {
     // Support both >= v4.8 and v4.7 and lower
     const decorators = (ts as any).canHaveDecorators
       ? (ts as any).getDecorators(node)
-      : node.decorators;
+      : (node as any).decorators;
     const httpCodeDecorator = getDecoratorOrUndefinedByNames(
       ['HttpCode'],
       decorators,

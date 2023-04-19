@@ -2,39 +2,16 @@ import * as ts from 'typescript';
 import { OPENAPI_NAMESPACE, OPENAPI_PACKAGE_NAME } from '../plugin-constants';
 
 const [major, minor] = ts.versionMajorMinor?.split('.').map((x) => +x);
+
 export class AbstractFileVisitor {
   updateImports(
     sourceFile: ts.SourceFile,
     factory: ts.NodeFactory | undefined,
     program: ts.Program
   ): ts.SourceFile {
-    if (!factory) {
-      // support TS v4.2+
-      const importEqualsDeclaration =
-        major == 4 && minor >= 2
-          ? (ts.createImportEqualsDeclaration as any)(
-              undefined,
-              undefined,
-              false,
-              OPENAPI_NAMESPACE,
-              ts.createExternalModuleReference(
-                ts.createLiteral(OPENAPI_PACKAGE_NAME)
-              )
-            )
-          : (ts.createImportEqualsDeclaration as any)(
-              undefined,
-              undefined,
-              OPENAPI_NAMESPACE,
-              ts.createExternalModuleReference(
-                ts.createLiteral(OPENAPI_PACKAGE_NAME)
-              )
-            );
-      return ts.updateSourceFileNode(sourceFile, [
-        importEqualsDeclaration,
-        ...sourceFile.statements
-      ]);
+    if (major <= 4 && minor < 2) {
+      throw new Error('Nest CLI plugin does not support TypeScript < v4.2');
     }
-    // support TS v4.2+
     const importEqualsDeclaration: ts.ImportDeclaration =
       major >= 4 && minor >= 2
         ? minor >= 8

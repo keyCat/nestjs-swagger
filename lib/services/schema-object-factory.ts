@@ -251,12 +251,16 @@ export class SchemaObjectFactory {
     if (!(enumName in schemas)) {
       const _enum = param.enum
         ? param.enum
-        : param.schema['items']
+        : param.schema ?
+        (param.schema['items']
         ? param.schema['items']['enum']
-        : param.schema['enum'];
+        : param.schema['enum'])
+        : param.isArray && param.items
+        ? param.items.enum
+        : undefined;
 
       schemas[enumName] = {
-        type: 'string',
+        type: param.schema?.['type'] ?? 'string',
         enum: _enum
       };
     }
