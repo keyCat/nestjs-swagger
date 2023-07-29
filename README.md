@@ -22,10 +22,78 @@
 
 [OpenAPI (Swagger)](https://www.openapis.org/) module for [Nest](https://github.com/nestjs/nest).
 
+## What's this fork?
+
+tl;dr see https://github.com/nestjs/swagger/issues/723
+
+The fork is 1:1 to the original project, but it adds a single feature: `ApiModel({ name: string })` decorator to allow renaming of Swagger schemas.
+
+This is useful for namespacing purposes, and as an escape hatch (when you simply can't avoid naming collisions between your classes, for any reason).
+
+For example, you may prefer to use TypeScript namespaces to organize your typings and DTOs:
+
+```ts
+export namespace EntityV1HttpNS {
+  export namespace FooMethod {
+    export namespace Response {
+      export class Body {
+        @ApiProperty()
+        status: number;
+      }
+    }
+  }
+}
+
+export namespace ThingV1HttpNS {
+  export namespace BarMethod {
+    export namespace Response {
+      export class Body {
+        @ApiProperty()
+        message: string;
+      }
+    }
+  }
+}
+```
+
+If you use both `Body` classes as a return type for your controller methods, `@nestjs/swagger` will generate an invalid Swagger spec due to a schema pathing collision.
+
+And since TypeScript namespaces are a compile-time feature, it is not possible (or even preferable) for `@nestjs/swagger` to use namespace names to construct schema names during runtime.
+
+`@ApiModel()` allows you to rename `Body` in a generated Swagger spec:
+
+```ts
+export namespace EntityV1HttpNS {
+  export namespace FooMethod {
+    export namespace Response {
+      @ApiModel({ name: 'EntityV1HttpNS.FooMethod.Response.Body' })
+      export class Body {
+        @ApiProperty()
+        status: number;
+      }
+    }
+  }
+}
+
+export namespace ThingV1HttpNS {
+  export namespace BarMethod {
+    export namespace Response {
+      export class Body {
+        @ApiModel({ name: 'ThingV1HttpNS.BarMethod.Response.Body' })
+        @ApiProperty()
+        message: string;
+      }
+    }
+  }
+}
+```
+
+Now, `@nestjs/swagger` will generate two Swagger schemas `EntityV1HttpNS.FooMethod.Response.Body` and `ThingV1HttpNS.BarMethod.Response.Body`.
+
 ## Installation
 
 ```bash
-$ npm i --save @nestjs/swagger 
+$ npm i --save @0x0c/nestjs-swagger 
 ```
 
 ## Quick Start
