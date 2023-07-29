@@ -8,6 +8,7 @@ import {
   SwaggerCustomOptions,
   SwaggerDocumentOptions
 } from './interfaces';
+import { MetadataLoader } from './plugin/metadata-loader';
 import { SwaggerScanner } from './swagger-scanner';
 import {
   buildSwaggerHTML,
@@ -16,11 +17,13 @@ import {
 } from './swagger-ui';
 import { assignTwoLevelsDeep } from './utils/assign-two-levels-deep';
 import { getGlobalPrefix } from './utils/get-global-prefix';
-import { validatePath } from './utils/validate-path.util';
 import { normalizeRelPath } from './utils/normalize-rel-path';
 import { validateGlobalPrefix } from './utils/validate-global-prefix.util';
+import { validatePath } from './utils/validate-path.util';
 
 export class SwaggerModule {
+  private static readonly metadataLoader = new MetadataLoader();
+
   public static createDocument(
     app: INestApplication,
     config: Omit<OpenAPIObject, 'paths'>,
@@ -41,6 +44,13 @@ export class SwaggerModule {
       ...config,
       ...document
     };
+  }
+
+  public static async loadPluginMetadata(
+    metadataFn: () => Promise<Record<string, any>>
+  ) {
+    const metadata = await metadataFn();
+    return this.metadataLoader.load(metadata);
   }
 
   private static serveStatic(finalPath: string, app: INestApplication) {
@@ -65,19 +75,43 @@ export class SwaggerModule {
     finalPath: string,
     urlLastSubdirectory: string,
     httpAdapter: HttpServer,
-    swaggerInitJS: string,
+    documentOrFactory: OpenAPIObject | (() => OpenAPIObject),
     options: {
-      html: string;
-      yamlDocument: string;
-      jsonDocument: string;
       jsonDocumentUrl: string;
       yamlDocumentUrl: string;
+      swaggerOptions: SwaggerCustomOptions;
     }
   ) {
+    let document: OpenAPIObject;
+
+    const lazyBuildDocument = () => {
+      return typeof documentOrFactory === 'function'
+        ? documentOrFactory()
+        : documentOrFactory;
+    };
+
+    const baseUrlForSwaggerUI = normalizeRelPath(`./${urlLastSubdirectory}/`);
+
+    let html: string;
+    let swaggerInitJS: string;
+
     httpAdapter.get(
       normalizeRelPath(`${finalPath}/swagger-ui-init.js`),
       (req, res) => {
         res.type('application/javascript');
+
+        if (!document) {
+          document = lazyBuildDocument();
+
+          if (options.swaggerOptions.patchDocumentOnRequest) {
+            document = options.swaggerOptions.patchDocumentOnRequest(req, res, document);
+          }
+        }
+
+        if (!swaggerInitJS) {
+          swaggerInitJS = buildSwaggerInitJS(document, options.swaggerOptions);
+        }
+
         res.send(swaggerInitJS);
       }
     );
@@ -93,6 +127,26 @@ export class SwaggerModule {
         ),
         (req, res) => {
           res.type('application/javascript');
+
+          if (!document) {
+            document = lazyBuildDocument();
+
+            if (options.swaggerOptions.patchDocumentOnRequest) {
+              document = options.swaggerOptions.patchDocumentOnRequest(
+                req,
+                res,
+                document
+              );
+            }
+          }
+
+          if (!swaggerInitJS) {
+            swaggerInitJS = buildSwaggerInitJS(
+              document,
+              options.swaggerOptions
+            );
+          }
+
           res.send(swaggerInitJS);
         }
       );
@@ -105,14 +159,48 @@ export class SwaggerModule {
 
     httpAdapter.get(finalPath, (req, res) => {
       res.type('text/html');
-      res.send(options.html);
+
+      if (!document) {
+        document = lazyBuildDocument();
+
+        if (options.swaggerOptions.patchDocumentOnRequest) {
+          document = options.swaggerOptions.patchDocumentOnRequest(req, res, document);
+        }
+      }
+
+      if (!html) {
+        html = buildSwaggerHTML(
+          baseUrlForSwaggerUI,
+          document,
+          options.swaggerOptions
+        );
+      }
+
+      res.send(html);
     });
 
     // fastify doesn't resolve 'routePath/' -> 'routePath', that's why we handle it manually
     try {
       httpAdapter.get(normalizeRelPath(`${finalPath}/`), (req, res) => {
         res.type('text/html');
-        res.send(options.html);
+
+        if (!document) {
+          document = lazyBuildDocument();
+
+          if (options.swaggerOptions.patchDocumentOnRequest) {
+            document = options.swaggerOptions.patchDocumentOnRequest(req, res, document);
+          }
+        }
+
+        if (!html) {
+          html = buildSwaggerHTML(
+            baseUrlForSwaggerUI,
+            document,
+            options.swaggerOptions
+          );
+        }
+
+        res.send(html);
       });
     } catch (err) {
       /**
@@ -123,21 +211,50 @@ export class SwaggerModule {
        */
     }
 
+    let yamlDocument: string;
+    let jsonDocument: string;
+
     httpAdapter.get(normalizeRelPath(options.jsonDocumentUrl), (req, res) => {
       res.type('application/json');
-      res.send(options.jsonDocument);
+
+      if (!document) {
+        document = lazyBuildDocument();
+
+        if (options.swaggerOptions.patchDocumentOnRequest) {
+          document = options.swaggerOptions.patchDocumentOnRequest(req, res, document);
+        }
+      }
+
+      if (!jsonDocument) {
+        jsonDocument = JSON.stringify(document);
+      }
+
+      res.send(jsonDocument);
     });
 
     httpAdapter.get(normalizeRelPath(options.yamlDocumentUrl), (req, res) => {
       res.type('text/yaml');
-      res.send(options.yamlDocument);
+
+      if (!document) {
+        document = lazyBuildDocument();
+
+        if (options.swaggerOptions.patchDocumentOnRequest) {
+          document = options.swaggerOptions.patchDocumentOnRequest(req, res, document);
+        }
+      }
+
+      if (!yamlDocument) {
+        yamlDocument = jsyaml.dump(document, { skipInvalid: true });
+      }
+
+      res.send(yamlDocument);
     });
   }
 
   public static setup(
     path: string,
     app: INestApplication,
-    document: OpenAPIObject,
+    documentOrFactory: OpenAPIObject | (() => OpenAPIObject),
     options?: SwaggerCustomOptions
   ) {
     const globalPrefix = getGlobalPrefix(app);
@@ -146,10 +263,7 @@ export class SwaggerModule {
         ? `${globalPrefix}${validatePath(path)}`
         : path
     );
-    const urlLastSubdirectory = finalPath.split('/').slice(-1).pop();
-
-    const yamlDocument = jsyaml.dump(document, { skipInvalid: true });
-    const jsonDocument = JSON.stringify(document);
+    const urlLastSubdirectory = finalPath.split('/').slice(-1).pop() || '';
 
     const validatedGlobalPrefix =
       options?.useGlobalPrefix && validateGlobalPrefix(globalPrefix)
@@ -164,23 +278,17 @@ export class SwaggerModule {
       ? `${validatedGlobalPrefix}${validatePath(options.yamlDocumentUrl)}`
       : `${finalPath}-yaml`;
 
-    const baseUrlForSwaggerUI = normalizeRelPath(`./${urlLastSubdirectory}/`);
-
-    const html = buildSwaggerHTML(baseUrlForSwaggerUI, document, options);
-    const swaggerInitJS = buildSwaggerInitJS(document, options);
     const httpAdapter = app.getHttpAdapter();
 
     SwaggerModule.serveDocuments(
       finalPath,
       urlLastSubdirectory,
       httpAdapter,
-      swaggerInitJS,
+      documentOrFactory,
       {
-        html,
-        yamlDocument,
-        jsonDocument,
         jsonDocumentUrl: finalJSONDocumentPath,
-        yamlDocumentUrl: finalYAMLDocumentPath
+        yamlDocumentUrl: finalYAMLDocumentPath,
+        swaggerOptions: options || {}
       }
     );
 
