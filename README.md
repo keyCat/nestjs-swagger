@@ -78,8 +78,8 @@ export namespace EntityV1HttpNS {
 export namespace ThingV1HttpNS {
   export namespace BarMethod {
     export namespace Response {
+      @ApiModel({ name: 'ThingV1HttpNS.BarMethod.Response.Body' })
       export class Body {
-        @ApiModel({ name: 'ThingV1HttpNS.BarMethod.Response.Body' })
         @ApiProperty()
         message: string;
       }
